@@ -679,8 +679,8 @@ class NestedIntervalsBehavior extends Behavior
                 $this->shift($right, $sLeft - 1, $sDelta);
                 $delta = $right - $sLeft;
             } else {
-                $this->shift($sRight + 1, $left, -$sDelta);
-                $delta = $left - $sRight;
+                $this->shift($sRight + 1, $left - 1, -$sDelta);
+                $delta = $left - $sRight - 1;
             }
             $this->owner->updateAll(
                 [
