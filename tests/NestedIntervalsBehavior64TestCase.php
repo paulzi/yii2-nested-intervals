@@ -476,4 +476,13 @@ class NestedIntervalsBehavior64TestCase extends BaseTestCase
         $expectedDataSet = new ArrayDataSet(require(__DIR__ . '/data/test-delete-with-children-64.php'));
         $this->assertDataSetsEqual($expectedDataSet, $dataSet);
     }
+
+    public function testOptimize()
+    {
+        MultipleTreeNode64::findOne(6)->optimize();
+
+        $dataSet = $this->getConnection()->createDataSet(['multiple_tree_64']);
+        $expectedDataSet = new ArrayDataSet(require(__DIR__ . '/data/test-optimize-64.php'));
+        $this->assertDataSetsEqual($expectedDataSet, $dataSet);
+    }
 }

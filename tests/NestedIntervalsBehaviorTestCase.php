@@ -982,6 +982,16 @@ class NestedIntervalsBehaviorTestCase extends BaseTestCase
         $node->deleteWithChildren();
     }
 
+    public function testOptimize()
+    {
+        Node::findOne(6)->optimize();
+        MultipleTreeNode::findOne(9)->optimize();
+
+        $dataSet = $this->getConnection()->createDataSet(['tree', 'multiple_tree']);
+        $expectedDataSet = new ArrayDataSet(require(__DIR__ . '/data/test-optimize.php'));
+        $this->assertDataSetsEqual($expectedDataSet, $dataSet);
+    }
+
     /**
      * @expectedException \yii\base\NotSupportedException
      */

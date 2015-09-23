@@ -781,7 +781,7 @@ class NestedIntervalsBehavior extends Behavior
         $left  = $this->owner->getAttribute($this->leftAttribute);
         $right = $this->owner->getAttribute($this->rightAttribute);
 
-        $count = $this->getDescendants()->count() * 2 + 1;
+        $count = $this->getDescendants()->orderBy(null)->count() * 2 + 1;
         $size  = (int)floor(($right - $left) / $count);
 
         $this->optimizeAttribute($this->getDescendants(null, false, false), $this->leftAttribute,  $left,  $size);
