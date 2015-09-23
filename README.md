@@ -1,6 +1,11 @@
 # Yii2 Nested Intervals Behavior
 
-Implementation of nested intervals algorithm for storing the trees in DB tables.  
+Implementation of nested intervals algorithm for storing the trees in DB tables.
+
+[![Packagist Version](https://img.shields.io/packagist/v/paulzi/yii2-nested-intervals.svg)](https://packagist.org/packages/paulzi/yii2-nested-intervals)
+[![Code Coverage](https://img.shields.io/scrutinizer/coverage/g/paulzi/yii2-nested-intervals/master.svg)](https://scrutinizer-ci.com/g/paulzi/yii2-nested-intervals/?branch=master)
+[![Build Status](https://img.shields.io/travis/paulzi/yii2-nested-intervals/master.svg)](https://travis-ci.org/paulzi/yii2-nested-intervals)
+[![Total Downloads](https://img.shields.io/packagist/dt/paulzi/yii2-nested-intervals.svg)](https://packagist.org/packages/paulzi/yii2-nested-intervals)
 
 ## Install
 
@@ -79,7 +84,7 @@ class SampleQuery extends \yii\db\ActiveQuery
 - `$leftAttribute = 'lft'` - left attribute in table schema.
 - `$rightAttribute = 'rgt'` - right attribute in table schema.
 - `$depthAttribute = 'depth'` - depth attribute in table schema (note: it must be signed int).
-- `$range = [0, 2147483647]` - interval size. Default values is max value for work in 32 bit php and standard signed int columns. If you have BIGINT left and right columns and 64 bit version of php, you can use `[0, 9223372036854775807]`.
+- `$range = [0, 2147483647]` - interval size. Default values is max value for work in 32 bit php and standard signed int columns. If you have BIGINT left and right columns, support 64 bit expression db and 64 bit version of php, you can use `[0, 9223372036854775807]` (SQLite not support this).
 - `$amountOptimize = 10` - optimization of the insert - the average number of children per level. The value can be an integer or an array indicating the value for each level. If the level is deeper than specified in the property, the value is taken from the last level in the array.
 - `$reserveFactor = 1` - factor determining the size of the gaps between the nodes. Default is 1, which corresponds to the fact that the intervals are equal to the size of the elements themselves. If you have many use of  `insertBefore()` and `insertAfter()` methods, you can try to increase this factor for better efficiency. 
 - `$noPrepend = false` - if true, then when you insert into an empty node will use the initial position of the gap.

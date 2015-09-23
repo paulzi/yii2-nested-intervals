@@ -91,6 +91,11 @@ class NestedIntervalsBehavior extends Behavior
      */
     protected $node;
 
+    /**
+     * @var string
+     */
+    protected $treeChange;
+
 
     /**
      * @inheritdoc
@@ -446,13 +451,7 @@ class NestedIntervalsBehavior extends Behavior
         if ($this->operation === self::OPERATION_MAKE_ROOT && $this->treeAttribute !== null && $this->owner->getAttribute($this->treeAttribute) === null) {
             $id = $this->owner->getPrimaryKey();
             $this->owner->setAttribute($this->treeAttribute, $id);
-
-            $primaryKey = $this->owner->primaryKey();
-            if (!isset($primaryKey[0])) {
-                throw new Exception('"' . $this->owner->className() . '" must have a primary key.');
-            }
-
-            $this->owner->updateAll([$this->treeAttribute => $id], [$primaryKey[0] => $id]);
+            $this->owner->updateAll([$this->treeAttribute => $id], [$this->getPrimaryKey() => $id]);
         }
         $this->operation = null;
         $this->node      = null;
@@ -472,8 +471,9 @@ class NestedIntervalsBehavior extends Behavior
                 if ($this->treeAttribute === null) {
                     throw new Exception('Can not move a node as the root when "treeAttribute" is not set.');
                 }
-                if ($this->isRoot()) {
-                    throw new Exception('Can not move the root node as the root.');
+                if ($this->owner->getOldAttribute($this->treeAttribute) !== $this->owner->getAttribute($this->treeAttribute)) {
+                    $this->treeChange = $this->owner->getAttribute($this->treeAttribute);
+                    $this->owner->setAttribute($this->treeAttribute, $this->owner->getOldAttribute($this->treeAttribute));
                 }
                 break;
 
@@ -511,22 +511,30 @@ class NestedIntervalsBehavior extends Behavior
 
             case self::OPERATION_PREPEND_TO:
                 $this->findPrependRange($left, $right);
-                $this->moveNode($left, $right, 1);
+                if ($right !== $this->owner->getAttribute($this->leftAttribute)) {
+                    $this->moveNode($left, $right, 1);
+                }
                 break;
 
             case self::OPERATION_APPEND_TO:
                 $this->findAppendRange($left, $right);
-                $this->moveNode($left, $right, 1);
+                if ($left !== $this->owner->getAttribute($this->rightAttribute)) {
+                    $this->moveNode($left, $right, 1);
+                }
                 break;
 
             case self::OPERATION_INSERT_BEFORE:
                 $this->findInsertBeforeRange($left, $right);
-                $this->moveNode($left, $right);
+                if ($left !== $this->owner->getAttribute($this->rightAttribute)) {
+                    $this->moveNode($left, $right);
+                }
                 break;
 
             case self::OPERATION_INSERT_AFTER:
                 $this->findInsertAfterRange($left, $right);
-                $this->moveNode($left, $right);
+                if ($right !== $this->owner->getAttribute($this->leftAttribute)) {
+                    $this->moveNode($left, $right);
+                }
                 break;
         }
         $this->operation = null;
@@ -557,6 +565,19 @@ class NestedIntervalsBehavior extends Behavior
         }
         $this->operation = null;
         $this->node      = null;
+    }
+
+    /**
+     * @return mixed
+     * @throws Exception
+     */
+    protected function getPrimaryKey()
+    {
+        $primaryKey = $this->owner->primaryKey();
+        if (!isset($primaryKey[0])) {
+            throw new Exception('"' . $this->owner->className() . '" must have a primary key.');
+        }
+        return $primaryKey[0];
     }
 
     /**
@@ -611,6 +632,7 @@ class NestedIntervalsBehavior extends Behavior
             $left++;
             $right--;
 
+            $isPadding = false;
             if ($depth === 1 || $parent !== null) {
                 // prepending/appending
                 if (is_array($this->amountOptimize)) {
@@ -622,27 +644,27 @@ class NestedIntervalsBehavior extends Behavior
                 } else {
                     $amountOptimize = $this->amountOptimize;
                 }
-                $pLeft    = $parent !== null ? (int)$parent[$this->leftAttribute]  : $this->node->getAttribute($this->leftAttribute);
-                $pRight   = $parent !== null ? (int)$parent[$this->rightAttribute] : $this->node->getAttribute($this->rightAttribute);
-                $isCenter = !$this->noAppend && !$this->noPrepend;
-                $isFirst  = $left === $pLeft + 1 && $right === $pRight - 1;
-                $step     = $amountOptimize + $this->reserveFactor * ($this->noInsert ? ($isCenter ? 2 : 1) : $amountOptimize + 1);
-                $step     = ($pRight - $pLeft - 1) / $step;
-                $padding  = $this->noInsert ? 0 : $step;
-                $size     = (int)floor($padding + $step);
-                $padding  = (int)floor($padding);
+                $pLeft     = $parent !== null ? (int)$parent[$this->leftAttribute]  : $this->node->getAttribute($this->leftAttribute);
+                $pRight    = $parent !== null ? (int)$parent[$this->rightAttribute] : $this->node->getAttribute($this->rightAttribute);
+                $isCenter  = !$this->noAppend && !$this->noPrepend;
+                $isFirst   = $left === $pLeft + 1 && $right === $pRight - 1;
+                $isPadding = !$this->noInsert || ($isFirst && ($forward ? !$this->noPrepend : !$this->noAppend));
+                $step      = $amountOptimize + $this->reserveFactor * ($this->noInsert ? ($isCenter ? 2 : 1) : $amountOptimize + 1);
+                $step      = ($pRight - $pLeft - 1) / $step;
+                $stepGap   = $step * $this->reserveFactor;
+                $padding   = $isPadding ? $stepGap : 0;
 
                 if ($forward) {
-                    $pLeft  = $left + $padding;
-                    $pRight = $left + $size - 1;
+                    $pLeft  = $left + (int)floor($padding);
+                    $pRight = $left + (int)floor($padding + $step) - 1;
                 } else {
-                    $pLeft  = $right - $size + 1;
-                    $pRight = $right - $padding;
+                    $pLeft  = $right - (int)floor($padding + $step) + 1;
+                    $pRight = $right - (int)floor($padding);
                 }
                 if ($isFirst && $isCenter) {
-                    $initPosition = (int)floor(($amountOptimize - 1) / 2) * $size + ($this->noInsert ? 1 : 0);
-                    $pLeft  += $initPosition;
-                    $pRight += $initPosition;
+                    $initPosition = (int)floor(($amountOptimize - 1) / 2) * (int)floor($step + ($this->noInsert ? 0 : $stepGap)) + ($this->noInsert ? 1 : 0);
+                    $pLeft  += $forward ? $initPosition : -$initPosition;
+                    $pRight += $forward ? $initPosition : -$initPosition;
                 }
                 if ($pLeft < $pRight && $pRight <= $right && $left <= $pLeft && ($forward || $left < $pLeft) && (!$forward || $pRight < $right)) {
                     $this->owner->setAttribute($this->leftAttribute,  $pLeft);
@@ -651,9 +673,10 @@ class NestedIntervalsBehavior extends Behavior
                 }
             }
 
-            $step = (int)floor(($right - $left) / ($this->noInsert ? 2 : 3));
-            $this->owner->setAttribute($this->leftAttribute,  $left  + ($forward && $this->noInsert ? 0 : $step));
-            $this->owner->setAttribute($this->rightAttribute, $right - (!$forward && $this->noInsert ? 0 : $step));
+            $isPadding = $isPadding || !$this->noInsert;
+            $step = (int)floor(($right - $left) / ($isPadding ? 3 : 2));
+            $this->owner->setAttribute($this->leftAttribute,  $left  + ($forward  && !$isPadding ? 0 : $step));
+            $this->owner->setAttribute($this->rightAttribute, $right - (!$forward && !$isPadding ? 0 : $step));
         }
     }
 
@@ -665,13 +688,14 @@ class NestedIntervalsBehavior extends Behavior
      */
     protected function moveNode($left, $right, $depth = 0)
     {
-        $depth = $this->owner->getAttribute($this->depthAttribute) - $this->node->getAttribute($this->depthAttribute) - $depth;
+        $targetDepth = $this->node->getAttribute($this->depthAttribute) + $depth;
+        $depthDelta = $this->owner->getAttribute($this->depthAttribute) - $targetDepth;
         if ($this->treeAttribute === null || $this->owner->getAttribute($this->treeAttribute) === $this->node->getAttribute($this->treeAttribute)) {
             // same root
             $sLeft = $this->owner->getAttribute($this->leftAttribute);
             $sRight = $this->owner->getAttribute($this->rightAttribute);
             $this->owner->updateAll(
-                [$this->depthAttribute => new Expression("-[[{$this->depthAttribute}]]" . sprintf('%+d', $depth))],
+                [$this->depthAttribute => new Expression("-[[{$this->depthAttribute}]]" . sprintf('%+d', $depthDelta))],
                 $this->getDescendants(null, true)->where
             );
             $sDelta = $sRight - $sLeft + 1;
@@ -679,8 +703,8 @@ class NestedIntervalsBehavior extends Behavior
                 $this->shift($right, $sLeft - 1, $sDelta);
                 $delta = $right - $sLeft;
             } else {
-                $this->shift($sRight + 1, $left - 1, -$sDelta);
-                $delta = $left - $sRight - 1;
+                $this->shift($sRight + 1, $left, -$sDelta);
+                $delta = $left - $sRight;
             }
             $this->owner->updateAll(
                 [
@@ -698,17 +722,17 @@ class NestedIntervalsBehavior extends Behavior
             // move from other root (slow!)
             /** @var ActiveRecord|self $root */
             $root      = $this->node->getRoot()->one();
-            $countTo   = (int)$root->getDescendants()->count();
-            $countFrom = (int)$this->getDescendants(null, true)->count();
-            $size  = ($this->range[1] - $this->range[0]) / (($countFrom + $countTo) * 2 + 1);
+            $countTo   = (int)$root->getDescendants()->orderBy(null)->count();
+            $countFrom = (int)$this->getDescendants(null, true)->orderBy(null)->count();
+            $size  = (int)floor(($this->range[1] - $this->range[0]) / (($countFrom + $countTo) * 2 + 1));
 
-            $leftIdx  = $this->optimizeAttribute($root->getDescendants(null, false, false), $this->leftAttribute,  $this->range[0], $size,  0, $left,  $countFrom);
-            $rightIdx = $this->optimizeAttribute($root->getDescendants(null, false, true),  $this->rightAttribute, $this->range[1], -$size, 0, $right, $countFrom);
+            $leftIdx  = $this->optimizeAttribute($root->getDescendants(null, false, false), $this->leftAttribute,  $this->range[0], $size,  0, $left,  $countFrom, $targetDepth);
+            $rightIdx = $this->optimizeAttribute($root->getDescendants(null, false, true),  $this->rightAttribute, $this->range[1], $size, 0,  $right, $countFrom, $targetDepth);
             if ($leftIdx !== null && $rightIdx !== null) {
-                $this->optimizeAttribute($this->getDescendants(null, true, false), $this->leftAttribute,  $this->range[0], $size,  $leftIdx);
-                $this->optimizeAttribute($this->getDescendants(null, true, true), $this->rightAttribute, $this->range[1], -$size, $rightIdx, false, 0, [
+                $this->optimizeAttribute($this->getDescendants(null, true, false), $this->leftAttribute,  $this->range[0], $size, $leftIdx);
+                $this->optimizeAttribute($this->getDescendants(null, true, true), $this->rightAttribute, $this->range[1],  $size, $rightIdx, null, 0,  null, [
                     $this->treeAttribute  => $this->node->getAttribute($this->treeAttribute),
-                    $this->depthAttribute => new Expression("[[{$this->depthAttribute}]]" . sprintf('%+d', -$depth)),
+                    $this->depthAttribute => new Expression("[[{$this->depthAttribute}]]" . sprintf('%+d', -$depthDelta)),
                 ]);
             } else {
                 throw new Exception('Error move a node from other tree');
@@ -724,14 +748,10 @@ class NestedIntervalsBehavior extends Behavior
         $left   = $this->owner->getAttribute($this->leftAttribute);
         $right  = $this->owner->getAttribute($this->rightAttribute);
         $depth  = $this->owner->getAttribute($this->depthAttribute);
-        $tree   = $this->owner->getPrimaryKey();
-        if ($this->owner->getOldAttribute($this->treeAttribute) !== $this->owner->getAttribute($this->treeAttribute)) {
-            $tree = $this->owner->getAttribute($this->treeAttribute);
-        }
+        $tree   = $this->treeChange ? $this->treeChange : $this->owner->getPrimaryKey();
 
         $factor = ($this->range[1] - $this->range[0]) / ($right - $left);
-        $factor = floor($factor * 1e8) / 1e8;
-        $formula = sprintf('([[%%s]] * 1.0 %+d) * %.8f %+d', -$left, $factor, $this->range[0]);
+        $formula = sprintf('ROUND(([[%%s]] * 1.0 %+d) * %d %+d)', -$left, (int)$factor, $this->range[0]);
         $this->owner->updateAll(
             [
                 $this->leftAttribute  => new Expression(sprintf($formula, $this->leftAttribute)),
@@ -739,8 +759,18 @@ class NestedIntervalsBehavior extends Behavior
                 $this->depthAttribute => new Expression("[[{$this->depthAttribute}]] - {$depth}"),
                 $this->treeAttribute  => $tree,
             ],
-            $this->getDescendants(null, true)->where
+            $this->getDescendants()->where
         );
+        $this->owner->updateAll(
+            [
+                $this->leftAttribute  => $this->range[0],
+                $this->rightAttribute => $this->range[1],
+                $this->depthAttribute => 0,
+                $this->treeAttribute  => $tree,
+            ],
+            [$this->getPrimaryKey() => $this->owner->getPrimaryKey()]
+        );
+        $this->owner->refresh();
     }
 
     /**
@@ -752,39 +782,36 @@ class NestedIntervalsBehavior extends Behavior
         $right = $this->owner->getAttribute($this->rightAttribute);
 
         $count = $this->getDescendants()->count() * 2 + 1;
-        $size  = ($right - $left) / $count;
+        $size  = (int)floor(($right - $left) / $count);
 
         $this->optimizeAttribute($this->getDescendants(null, false, false), $this->leftAttribute,  $left,  $size);
-        $this->optimizeAttribute($this->getDescendants(null, false, true),  $this->rightAttribute, $right, -$size);
+        $this->optimizeAttribute($this->getDescendants(null, false, true),  $this->rightAttribute, $right, $size);
     }
 
     /**
      * @param \yii\db\ActiveQuery $query
      * @param string $attribute
      * @param int $from
-     * @param float $size
+     * @param int $size
      * @param int $offset
-     * @param int|bool $freeFrom
+     * @param int|null $freeFrom
      * @param int $freeSize
+     * @param int|null $targetDepth
      * @param array $additional
      * @return int|null
      * @throws Exception
      * @throws \yii\db\Exception
      */
-    protected function optimizeAttribute($query, $attribute, $from, $size, $offset = 0, $freeFrom = false, $freeSize = 0, $additional = [])
+    protected function optimizeAttribute($query, $attribute, $from, $size, $offset = 0, $freeFrom = null, $freeSize = 0, $targetDepth = null, $additional = [])
     {
-        $primaryKey = $this->owner->primaryKey();
-        if (!isset($primaryKey[0])) {
-            throw new Exception('"' . $this->owner->className() . '" must have a primary key.');
-        }
-        $primaryKey = $primaryKey[0];
-        $result = null;
+        $primaryKey = $this->getPrimaryKey();
+        $result     = null;
+        $isForward  = $attribute === $this->leftAttribute;
 
         // @todo: pgsql and mssql optimization
         if (in_array($this->owner->getDb()->driverName, ['mysql', 'mysqli'])) {
             // mysql optimization
-            $tableName  = $this->owner->tableName();
-
+            $tableName = $this->owner->tableName();
             $additionalString = null;
             $additionalParams = [];
             foreach ($additional as $name => $value) {
@@ -795,7 +822,7 @@ class NestedIntervalsBehavior extends Behavior
                         $additionalParams[$n] = $v;
                     }
                 } else {
-                    $paramName = ':pzNestedIntervals' . count($additionalParams);
+                    $paramName = ':nestedIntervals' . count($additionalParams);
                     $additionalString .= $paramName;
                     $additionalParams[$paramName] = $value;
                 }
@@ -803,74 +830,95 @@ class NestedIntervalsBehavior extends Behavior
 
             $command = $query
                 ->select([$primaryKey, $attribute, $this->depthAttribute])
-                ->orderBy([$attribute => ($size > 0 ? SORT_ASC : SORT_DESC)])
+                ->orderBy([$attribute => $isForward ? SORT_ASC : SORT_DESC])
                 ->createCommand();
             $this->owner->getDb()->createCommand("
                 UPDATE
                     {$tableName} u,
                     (SELECT
                         [[{$primaryKey}]],
-                            IF (@pzi := @pzi + 1 + IF (@pzdepth - [[{$this->depthAttribute}]] >= 0, @pzdepth - [[{$this->depthAttribute}]] + 1, 0), 0, 0)
-                            + IF (@pzresult := IF ([[{$attribute}]] " . ($size > 0 ? '>' : '<') . " :freeFrom AND @pzfreesize > 0, @pzi - 1, @pzresult), 0, 0)
-                            + IF (@pzi := @pzi + IF ([[{$attribute}]] " . ($size > 0 ? '>' : '<') . " :freeFrom, @pzfreesize*2, 0), 0, 0)
-                            + (:from + (@pzi + :offset) * :size)
-                            + IF (@pzdepth := [[{$this->depthAttribute}]], 0, 0)
-                            + IF (@pzfreesize := IF ([[{$attribute}]] " . ($size > 0 ? '>' : '<') . " :freeFrom, 0, @pzfreesize), 0, 0)
-                            as 'new'
+                        IF (@i := @i + 1, 0, 0)
+                        + IF ([[{$attribute}]] " . ($isForward ? '>' : '<') . " @freeFrom,
+                            IF (
+                                (@result := @i)
+                                + IF (@depth - :targetDepth > 0, @result := @result + @depth - :targetDepth, 0)
+                                + (@i := @i + :freeSize * 2)
+                                + (@freeFrom := NULL), 0, 0),
+                            0)
+                        + IF (@depth - [[{$this->depthAttribute}]] >= 0,
+                            IF (@i := @i + @depth - [[{$this->depthAttribute}]] + 1, 0, 0),
+                            0)
+                        + (:from " . ($isForward ? '+' : '-') . " (CAST(@i AS UNSIGNED INTEGER) + :offset) * :size)
+                        + IF ([[{$attribute}]] = @freeFrom,
+                            IF ((@result := @i) + (@i := @i + :freeSize * 2) + (@freeFrom := NULL), 0, 0),
+                            0)
+                        + IF (@depth := [[{$this->depthAttribute}]], 0, 0)
+                        as 'new'
                     FROM
-                        (SELECT @pzi := 0, @pzdepth := -1, @pzfreesize := :freeSize, @pzresult := NULL) v,
+                        (SELECT @i := 0, @depth := -1, @freeFrom := :freeFrom, @result := NULL) v,
                         (" . $command->sql . ") t
                     ) tmp
                 SET u.[[{$attribute}]]=tmp.[[new]] {$additionalString}
                 WHERE tmp.[[{$primaryKey}]]=u.[[{$primaryKey}]]")
                 ->bindValues($additionalParams)
                 ->bindValues($command->params)
-                ->bindValue(':from',     $from)
-                ->bindValue(':size',     $size)
-                ->bindValue(':offset',   $offset)
-                ->bindValue(':freeFrom', $freeFrom)
-                ->bindValue(':freeSize', $freeSize)
+                ->bindValues([
+                    ':from'        => $from,
+                    ':size'        => $size,
+                    ':offset'      => $offset,
+                    ':freeFrom'    => $freeFrom,
+                    ':freeSize'    => $freeSize,
+                    ':targetDepth' => $targetDepth,
+                ])
                 ->execute();
-            if ($freeFrom !== false) {
-                $result = $this->owner->getDb()->createCommand("SELECT IFNULL(@pzresult, @pzi + 1)")->queryScalar();
+            if ($freeFrom !== null) {
+                $result = $this->owner->getDb()->createCommand("SELECT IFNULL(@result, @i + 1 + IF (@depth - :targetDepth > 0, @depth - :targetDepth, 0))")
+                    ->bindValue(':targetDepth', $targetDepth)
+                    ->queryScalar();
                 $result = $result === null ? null : (int)$result;
             }
             return $result;
         } else {
             // generic algorithm (very slow!)
-            $freeBefore = false;
-            if ($freeFrom !== false) {
-                $queryClone = clone $query;
-                $freeBefore = $queryClone
-                    ->select($primaryKey)
-                    ->andWhere([$size > 0 ? '>' : '<', $attribute, $freeFrom])
-                    ->orderBy([$attribute => ($size > 0 ? SORT_ASC : SORT_DESC)])
-                    ->limit(1)
-                    ->scalar();
-            }
-
             $query
-                ->select([$primaryKey, $this->depthAttribute])
+                ->select([$primaryKey, $attribute, $this->depthAttribute])
                 ->asArray()
-                ->orderBy([$attribute => ($size > 0 ? SORT_ASC : SORT_DESC)]);
+                ->orderBy([$attribute => $isForward ? SORT_ASC : SORT_DESC]);
 
             $prevDepth = -1;
             $i = 0;
             foreach ($query->each() as $data) {
-                $depthDiff = $prevDepth - $data[$this->depthAttribute];
-                $i += 1 + ($depthDiff >= 0 ? $depthDiff + 1 : 0);
-                if ($freeBefore === $data[$primaryKey]) {
-                    $result = $i - 1;
+                $i++;
+                if ($freeFrom !== null && $freeFrom !== (int)$data[$attribute] && ($freeFrom > (int)$data[$attribute] xor $isForward)) {
+                    $result = $i;
+                    $depthDiff = $prevDepth - $targetDepth;
+                    if ($depthDiff > 0) {
+                        $result += $depthDiff;
+                    }
                     $i += $freeSize * 2;
+                    $freeFrom = null;
                 }
-                $prevDepth = $data[$this->depthAttribute];
+                $depthDiff = $prevDepth - $data[$this->depthAttribute];
+                if ($depthDiff >= 0) {
+                    $i += $depthDiff + 1;
+                }
                 $this->owner->updateAll(
-                    array_merge($additional, [$attribute  => round($from + ($i + $offset) * $size)]),
+                    array_merge($additional, [$attribute  => $isForward ? $from + ($i + $offset) * $size : $from - ($i + $offset) * $size]),
                     [$primaryKey => $data[$primaryKey]]
                 );
+                if ($freeFrom !== null && $freeFrom === (int)$data[$attribute]) {
+                    $result = $i;
+                    $i += $freeSize * 2;
+                    $freeFrom = null;
+                }
+                $prevDepth = $data[$this->depthAttribute];
             }
-            if ($freeFrom !== false && $freeBefore === false) {
+            if ($freeFrom !== null) {
                 $result = $i + 1;
+                $depthDiff = $prevDepth - $targetDepth;
+                if ($depthDiff > 0) {
+                    $result += $depthDiff;
+                }
             }
             return $result;
         }
@@ -1006,15 +1054,15 @@ class NestedIntervalsBehavior extends Behavior
     {
         $unallocated = false;
         if ($right < (($this->range[1] - $this->range[0])>>1)) {
-            $unallocated = $unallocated ?: $this->findUnallocated($right, $this->leftAttribute,  true);
             $unallocated = $unallocated ?: $this->findUnallocated($right, $this->rightAttribute, true);
-            $unallocated = $unallocated ?: $this->findUnallocated($left,  $this->rightAttribute, false);
+            $unallocated = $unallocated ?: $this->findUnallocated($right, $this->leftAttribute,  true);
             $unallocated = $unallocated ?: $this->findUnallocated($left,  $this->leftAttribute,  false);
+            $unallocated = $unallocated ?: $this->findUnallocated($left,  $this->rightAttribute, false);
         } else {
-            $unallocated = $unallocated ?: $this->findUnallocated($left,  $this->rightAttribute, false);
             $unallocated = $unallocated ?: $this->findUnallocated($left,  $this->leftAttribute,  false);
-            $unallocated = $unallocated ?: $this->findUnallocated($right, $this->leftAttribute,  true);
+            $unallocated = $unallocated ?: $this->findUnallocated($left,  $this->rightAttribute, false);
             $unallocated = $unallocated ?: $this->findUnallocated($right, $this->rightAttribute, true);
+            $unallocated = $unallocated ?: $this->findUnallocated($right, $this->leftAttribute,  true);
         }
         return $unallocated;
     }
