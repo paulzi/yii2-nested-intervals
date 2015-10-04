@@ -581,6 +581,19 @@ class NestedIntervalsBehavior extends Behavior
     }
 
     /**
+     * @return self
+     */
+    public function getNodeBehavior()
+    {
+        foreach ($this->node->behaviors as $behavior) {
+            if ($behavior instanceof NestedIntervalsBehavior) {
+                return $behavior;
+            }
+        }
+        return null;
+    }
+
+    /**
      * @return int
      */
     protected function deleteWithChildrenInternal()
@@ -608,7 +621,7 @@ class NestedIntervalsBehavior extends Behavior
             throw new Exception('Can not create a node when the target node is new record.');
         }
 
-        if ($depth === 0 && $this->node->isRoot()) {
+        if ($depth === 0 && $this->getNodeBehavior()->isRoot()) {
             throw new Exception('Can not insert a node before/after root.');
         }
         $this->owner->setAttribute($this->depthAttribute, $this->node->getAttribute($this->depthAttribute) + $depth);
@@ -721,7 +734,7 @@ class NestedIntervalsBehavior extends Behavior
         } else {
             // move from other root (slow!)
             /** @var ActiveRecord|self $root */
-            $root      = $this->node->getRoot()->one();
+            $root      = $this->getNodeBehavior()->getRoot()->one();
             $countTo   = (int)$root->getDescendants()->orderBy(null)->count();
             $countFrom = (int)$this->getDescendants(null, true)->orderBy(null)->count();
             $size  = (int)floor(($this->range[1] - $this->range[0]) / (($countFrom + $countTo) * 2 + 1));
@@ -932,7 +945,7 @@ class NestedIntervalsBehavior extends Behavior
     {
         $left  = $this->node->getAttribute($this->leftAttribute);
         $right = $this->node->getAttribute($this->rightAttribute);
-        $child = $this->node->getChildren()
+        $child = $this->getNodeBehavior()->getChildren()
             ->select($this->leftAttribute)
             ->orderBy([$this->leftAttribute => SORT_ASC])
             ->limit(1)
@@ -950,7 +963,7 @@ class NestedIntervalsBehavior extends Behavior
     {
         $left  = $this->node->getAttribute($this->leftAttribute);
         $right = $this->node->getAttribute($this->rightAttribute);
-        $child = $this->node->getChildren()
+        $child = $this->getNodeBehavior()->getChildren()
             ->select($this->rightAttribute)
             ->orderBy([$this->rightAttribute => SORT_DESC])
             ->limit(1)
@@ -969,11 +982,11 @@ class NestedIntervalsBehavior extends Behavior
     {
         $result = null;
         $right = $this->node->getAttribute($this->leftAttribute);
-        $left  = $this->node->getPrev()
+        $left  = $this->getNodeBehavior()->getPrev()
             ->select($this->rightAttribute)
             ->scalar();
         if ($left === false) {
-            $result = $this->node->getParent()
+            $result = $this->getNodeBehavior()->getParent()
                 ->select([$this->leftAttribute, $this->rightAttribute])
                 ->createCommand()
                 ->queryOne();
@@ -992,11 +1005,11 @@ class NestedIntervalsBehavior extends Behavior
     {
         $result = null;
         $left  = $this->node->getAttribute($this->rightAttribute);
-        $right = $this->node->getNext()
+        $right = $this->getNodeBehavior()->getNext()
             ->select($this->leftAttribute)
             ->scalar();
         if ($right === false) {
-            $result = $this->node->getParent()
+            $result = $this->getNodeBehavior()->getParent()
                 ->select([$this->leftAttribute, $this->rightAttribute])
                 ->createCommand()
                 ->queryOne();
