@@ -119,6 +119,10 @@ class NestedIntervalsBehavior64TestCase extends BaseTestCase
         $node = MultipleTreeNode64::findOne(19);
         $node->populateTree();
         $this->assertEquals(true, $node->isRelationPopulated('children'));
+
+        $node = MultipleTreeNode64::findOne(19);
+        $node->populateTree(1);
+        $this->assertEquals(true, $node->isRelationPopulated('children'));
     }
 
     public function testIsRoot()
