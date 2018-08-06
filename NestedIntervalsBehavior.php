@@ -468,7 +468,7 @@ class NestedIntervalsBehavior extends Behavior
         switch ($this->operation) {
             case self::OPERATION_MAKE_ROOT:
                 $condition = array_merge([$this->leftAttribute => $this->range[0]], $this->treeCondition());
-                if ($this->owner->findOne($condition) !== null) {
+                if ($this->owner->find()->andWhere($condition)->one() !== null) {
                     throw new Exception('Can not create more than one root.');
                 }
                 $this->owner->setAttribute($this->leftAttribute,  $this->range[0]);
