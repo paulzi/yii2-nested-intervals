@@ -18,7 +18,7 @@ composer require paulzi/yii2-nested-intervals
 or add
 
 ```bash
-"paulzi/yii2-nested-intervals" : "^1.0"
+"paulzi/yii2-nested-intervals" : "^1.1"
 ```
 
 to the `require` section of your `composer.json` file.
